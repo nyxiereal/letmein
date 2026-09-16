@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -50,3 +50,22 @@ jobs:
             app/build/outputs/apk/release/app-release.apk
             app/build/outputs/apk/release/app-release.apk.sha256
           if-no-files-found: error
+
+      - name: Publish GitHub release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(awk -F'"' '/versionName =/ { print $2; exit }' app/build.gradle.kts)
+          test -n "$version"
+          tag="v$version"
+          apk="mbank-unrestrictor-$tag.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$apk"
+          sha256sum "$apk" > "$apk.sha256"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$apk" "$apk.sha256" --clobber
+          else
+            gh release create "$tag" "$apk" "$apk.sha256" \
+              --target "$GITHUB_SHA" --title "$tag" --generate-notes
+          fi
